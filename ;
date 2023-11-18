@@ -6,7 +6,7 @@ from typing import Dict, Tuple
 
 
 class SimpleServer:
-    def __init__(self, host: str = '127.0.0.1', port: int = 65443):
+    def __init__(self, host: str = '127.0.0.1', port: int = 65433):
         self.host: str = host
         self.port: int = port
         self.connections: Dict[Tuple[str, int], socket.socket] = {}
