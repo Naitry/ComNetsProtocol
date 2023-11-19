@@ -1,15 +1,27 @@
-import socket
+import configparser
+from typing import Optional
 import os
+import signal
+import socket
 import sys
 import threading
-import signal
+
 from typing import Dict, Tuple, List
 
 
+config = configparser.ConfigParser()
+config.read('../serverConfig.ini')
+
+
 class SimpleServer:
-    def __init__(self, host: str = '127.0.0.1', port: int = 65443):
-        self.host: str = host
-        self.port: int = port
+    def __init__(self):
+        host: Optional[str] = config['DEFAULT']['Host']
+        port: Optional[int] = int(config['DEFAULT']['Port'])
+        password: Optional[str] = config['DEFAULT']['Password']
+
+        self.host: str = host if host else "127.0.0.1"
+        self.port: int = port if port else 55222
+        self.password: str = password if password else "password"
         self.connections: Dict[Tuple[str, int], socket.socket] = {}
         self.threads: List[threading.Thread] = []
         self.running: bool = False
@@ -56,8 +68,10 @@ class SimpleServer:
                     conn.sendall(data)
                     print(f"Message received and sent back: {data[5:].decode()}")
                 elif data == b'TERM':
-                    print("Terminating server")
-                    self.stop_server()
+                    if self.validate_credentials(conn):
+                        print("Terminating server")
+                        self.stop_server()
+
             except ConnectionResetError:
                 break
             except Exception as e:
@@ -68,6 +82,34 @@ class SimpleServer:
         conn.close()
         with self.lock:
             self.connections.pop(addr, None)
+
+    def validate_credentials(self,
+                             conn: socket) -> bool:
+        """
+        Prompts user for a password, awaits a response, returning a bool
+        indicating accuracy
+
+        :param sock: socket used for TCP communication.
+        :return: True if server response matches password
+                 False otherwise.
+        """
+        password_attempt: bytes = conn.recv(1024)
+
+        # CASE: Password command header received
+        if password_attempt.startswith(b'PASS '):
+            received_password: str = password_attempt[5:].decode('utf-8')
+            # CASE: Correct password
+            if received_password == self.password:
+                conn.sendall(b'PWOK')
+                return True
+            # CASE: Incorrect password
+            else:
+                conn.sendall(b'PWNO')
+                return False
+        # CASE: incorrect password response format
+        else:
+            conn.sendall(b'PWIV')
+            return False
 
     def run_server(self,
                    log: str):
@@ -132,6 +174,7 @@ class SimpleServer:
                 if self.running:
                     self.stop_server()
                 sys.exit()
+                break
 
 
 if __name__ == "__main__":

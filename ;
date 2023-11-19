@@ -1,6 +1,5 @@
 import configparser
 import socket
-import sys
 
 from typing import Optional
 
@@ -37,14 +36,13 @@ class SimpleClient:
                         s.sendall(('PASS ' + password).encode('utf-8'))
                         respone: str = s.recv(1024)
                         if respone == b'PWOK':
-                            print("Password correct, terminating the server")
                             s.close()
                             sys.close()
                             break
                         elif respone == b'PWNO':
                             print("Invalid password, server continues to run")
                         elif respone == b'PWIV':
-                            print("Invalid password format, server continues to run")
+
                     else:
                         s.sendall(('MESG ' + send).encode('utf-8'))
 
