@@ -1,8 +1,8 @@
 import socket
 import os
+import sys
 import threading
-import time
-from typing import Dict, Tuple
+from typing import Dict, Tuple, List
 
 
 class SimpleServer:
@@ -10,8 +10,10 @@ class SimpleServer:
         self.host: str = host
         self.port: int = port
         self.connections: Dict[Tuple[str, int], socket.socket] = {}
+        self.threads: List[threading.Thread] = []
         self.running: bool = False
         self.server_socket: socket.socket = None
+        self.lock: threading.Lock = threading.Lock()
 
     def await_handshake(self,
                         conn: socket.socket,
@@ -22,7 +24,8 @@ class SimpleServer:
             if recv == b'PING':
                 conn.sendall(b'PONG')
                 print(f'Correct handshake with {addr}!')
-                self.connections[addr] = conn
+                with self.lock:
+                    self.connections[addr] = conn
                 self.handle_client(conn, addr, log)
             else:
                 print(f'Handshake failed with {addr}')
@@ -46,7 +49,7 @@ class SimpleServer:
                     conn.sendall(data)
                     print(f"Message received and sent back: {data[5:].decode()}")
                 elif data == b'TERM':
-                    print("terminating server")
+                    print("Terminating server")
                     self.stop_server()
             except ConnectionResetError:
                 break
@@ -56,11 +59,8 @@ class SimpleServer:
 
         print(f"Connection with {addr} closed.")
         conn.close()
-        self.connections.pop(addr, None)
-
-        print(f"Connection with {addr} closed.")
-        conn.close()
-        del self.connections[addr]
+        with self.lock:
+            self.connections.pop(addr, None)
 
     def run_server(self, log: str):
         self.running = True
@@ -77,44 +77,49 @@ class SimpleServer:
             try:
                 conn, addr = self.server_socket.accept()
                 if conn:
-                    threading.Thread(target=self.await_handshake,
-                                     args=(conn, addr, log)).start()
+                    thread = threading.Thread(target=self.await_handshake,
+                                              args=(conn, addr, log))
+                    thread.start()
+                    self.threads.append(thread)
             except OSError:
                 break
 
-    def accept_connection(self):
-        self.server_socket.settimeout(1.0)
-        try:
-            return self.server_socket.accept()
-        except socket.timeout:
-            return None, None
-
     def stop_server(self):
+        print("Stopping Server...")
         self.running = False
         if self.server_socket:
             self.server_socket.close()
-        for addr, conn in list(self.connections.items()):
+        for index, addr, conn in enumerate(list(self.connections.items())):
             conn.close()
+        # Join all threads
+        for thread in self.threads:
+            thread.join()
+        self.threads.clear()
         print("Server stopped.")
 
     def start_ui(self):
         while True:
             cmd = input("Enter command (start, stop, exit): ").lower()
+            print()
+            # CASE: start server
             if cmd == "start":
                 if not self.running:
+                    print("Starting Server...")
                     threading.Thread(target=self.run_server,
                                      args=("./log.txt",)).start()
                 else:
                     print("Server is already running.")
+            # CASE: stop server
             elif cmd == "stop":
                 if self.running:
                     self.stop_server()
                 else:
                     print("Server is not running.")
+            # CASE: terminate application entirely
             elif cmd == "exit":
                 if self.running:
                     self.stop_server()
-                break
+                sys.exit()
 
 
 if __name__ == "__main__":
