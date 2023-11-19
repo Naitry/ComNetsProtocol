@@ -2,6 +2,7 @@ import socket
 import os
 import sys
 import threading
+import signal
 from typing import Dict, Tuple, List
 
 
@@ -14,6 +15,12 @@ class SimpleServer:
         self.running: bool = False
         self.server_socket: socket.socket = None
         self.lock: threading.Lock = threading.Lock()
+        signal.signal(signal.SIGINT, self.signal_handler)
+
+    def signal_handler(self, signum, frame):
+        print("\nReceived interrupt signal, shutting down...")
+        self.stop_server()
+        sys.exit(0)
 
     def await_handshake(self,
                         conn: socket.socket,
@@ -62,7 +69,8 @@ class SimpleServer:
         with self.lock:
             self.connections.pop(addr, None)
 
-    def run_server(self, log: str):
+    def run_server(self,
+                   log: str):
         self.running = True
         if not os.path.exists(log):
             with open(log, 'w') as file:
@@ -87,9 +95,13 @@ class SimpleServer:
     def stop_server(self):
         print("Stopping Server...")
         self.running = False
+        # close socket
         if self.server_socket:
+            # self.server_socket.shutdown("SHUT_RDWR")
             self.server_socket.close()
-        for index, addr, conn in enumerate(list(self.connections.items())):
+            print("socket closed")
+        # close all connections
+        for addr, conn in enumerate(list(self.connections.items())):
             conn.close()
         # Join all threads
         for thread in self.threads:
@@ -124,4 +136,8 @@ class SimpleServer:
 
 if __name__ == "__main__":
     server = SimpleServer()
-    server.start_ui()
+    try:
+        server.start_ui()
+    except KeyboardInterrupt:
+        print("Interrupt received, shutting down...")
+        server.stop_server()
