@@ -6,7 +6,7 @@ from os import path
 from typing import Optional
 
 config = configparser.ConfigParser()
-configPath:  str = '../clientConfig.ini'
+configPath:  str = 'clientConfig.ini'
 config.read(configPath)
 
 

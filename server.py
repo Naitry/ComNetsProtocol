@@ -5,12 +5,13 @@ import signal
 import socket
 import sys
 import threading
+import datetime
 from os import path
 from typing import Dict, Tuple, List
 
 
 config = configparser.ConfigParser()
-configPath:  str = '../serverConfig.ini'
+configPath:  str = 'serverConfig.ini'
 config.read(configPath)
 
 
@@ -68,8 +69,14 @@ class SimpleServer:
                 if not data:
                     break
                 if data.startswith(b'MESG'):
-                    with open(log, "a") as file:
-                        file.write(data[5:].decode('utf-8') + "\n")
+                    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    message = data[5:].decode('utf-8')
+                    log_entry = f"{timestamp} - {message}\n"
+
+                    with open(log,
+                              "a") as file:
+                        file.write(log_entry)
+
                     conn.sendall(data)
                     print(f"Message received and sent back: {data[5:].decode()}")
                 elif data == b'TERM':
