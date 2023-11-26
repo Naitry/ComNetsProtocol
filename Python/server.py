@@ -5,19 +5,24 @@ import signal
 import socket
 import sys
 import threading
-
+from os import path
 from typing import Dict, Tuple, List
 
 
 config = configparser.ConfigParser()
-config.read('../serverConfig.ini')
+configPath:  str = '../serverConfig.ini'
+config.read(configPath)
 
 
 class SimpleServer:
     def __init__(self):
-        host: Optional[str] = config['DEFAULT']['Host']
-        port: Optional[int] = int(config['DEFAULT']['Port'])
-        password: Optional[str] = config['DEFAULT']['Password']
+        host: Optional[str] = None
+        port: Optional[int] = None
+        password: Optional[str] = None
+        if path.exists(configPath):
+            host = config['DEFAULT']['Host']
+            port = int(config['DEFAULT']['Port'])
+            password = config['DEFAULT']['Password']
 
         self.host: str = host if host else "127.0.0.1"
         self.port: int = port if port else 55222
@@ -111,76 +116,98 @@ class SimpleServer:
             conn.sendall(b'PWIV')
             return False
 
-    def run_server(self,
-                   log: str):
+    def run_server(self, log: str):
         self.running = True
-        if not os.path.exists(log):
-            with open(log, 'w') as file:
-                file.write('')
+        try:
+            if not os.path.exists(log):
+                with open(log, 'w') as file:
+                    file.write('')
 
-        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.server_socket.bind((self.host, self.port))
-        self.server_socket.listen()
-        print(f"Server running on {self.host}:{self.port}")
+            self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self.server_socket.bind((self.host, self.port))
+            self.server_socket.listen()
+            print(f"Server running on {self.host}:{self.port}")
 
-        while self.running:
-            try:
-                conn, addr = self.server_socket.accept()
-                if conn:
-                    thread = threading.Thread(target=self.await_handshake,
-                                              args=(conn, addr, log))
-                    thread.start()
-                    self.threads.append(thread)
-            except OSError:
-                break
+            while self.running:
+                try:
+                    conn, addr = self.server_socket.accept()
+                    if conn:
+                        thread = threading.Thread(target=self.await_handshake,
+                                                  args=(conn, addr, log))
+                        thread.start()
+                        self.threads.append(thread)
+                except socket.error as e:
+                    # Handle specific socket errors if necessary
+                    if not self.running:
+                        break
+                    print(f"Socket error: {e}")
+        finally:
+            # Ensure the socket is closed in case of an error
+            self.server_socket.close()
 
     def stop_server(self):
         print("Stopping Server...")
         self.running = False
-        # close socket
-        if self.server_socket:
-            # self.server_socket.shutdown("SHUT_RDWR")
-            self.server_socket.close()
-            print("socket closed")
-        # close all connections
-        for addr, conn in enumerate(list(self.connections.items())):
-            conn.close()
-        # Join all threads
+
+        # Temporarily create a new connection to unblock accept() call
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as temp_socket:
+            try:
+                temp_socket.connect((self.host, self.port))
+            except socket.error:
+                pass
+
+        # Close the server socket
+        self.server_socket.close()
+
+        # Close all client connections
+        with self.lock:
+            for addr, conn in self.connections.items():
+                print(f"Closing connection: {addr}")
+                conn.close()
+
+        # Wait for all threads to finish
+        current_thread = threading.current_thread()
         for thread in self.threads:
-            thread.join()
+            if thread is not current_thread:
+                thread.join()
         self.threads.clear()
         print("Server stopped.")
+
+    def are_threads_active(self) -> bool:
+        """
+        Check if there are any active threads in the list.
+        """
+        return any(thread.is_alive() for thread in self.threads)
 
     def start_ui(self):
         while True:
             cmd = input("Enter command (start, stop, exit): ").lower()
             print()
-            # CASE: start server
             if cmd == "start":
-                if not self.running:
+                if not self.running and not self.are_threads_active():
                     print("Starting Server...")
-                    threading.Thread(target=self.run_server,
-                                     args=("./log.txt",)).start()
+                    threading.Thread(target=self.run_server, args=("./log.txt",)).start()
                 else:
-                    print("Server is already running.")
-            # CASE: stop server
+                    print("Server is either already running or previous threads are still active.")
             elif cmd == "stop":
                 if self.running:
                     self.stop_server()
                 else:
                     print("Server is not running.")
-            # CASE: terminate application entirely
             elif cmd == "exit":
                 if self.running:
                     self.stop_server()
                 sys.exit()
-                break
 
 
 if __name__ == "__main__":
     server = SimpleServer()
     try:
         server.start_ui()
+    except Exception as e:
+        print(f"Unhandled exception: {e}")
+        server.stop_server()
     except KeyboardInterrupt:
         print("Interrupt received, shutting down...")
         server.stop_server()

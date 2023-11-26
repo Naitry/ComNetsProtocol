@@ -1,17 +1,22 @@
 import configparser
 import socket
 import sys
+from os import path
 
 from typing import Optional
 
 config = configparser.ConfigParser()
-config.read('../clientConfig.ini')
+configPath:  str = '../clientConfig.ini'
+config.read(configPath)
 
 
 class SimpleClient:
     def __init__(self):
-        host: Optional[str] = config['DEFAULT']['Host']
-        port: Optional[int] = int(config['DEFAULT']['Port'])
+        host: Optional[str] = None
+        port: Optional[int] = None
+        if path.exists(configPath):
+            host: Optional[str] = config['DEFAULT']['Host']
+            port: Optional[int] = int(config['DEFAULT']['Port'])
 
         self.host: str = host if host else "127.0.0.1"
         self.port: int = port if port else 55222
@@ -31,20 +36,25 @@ class SimpleClient:
             while self.on:
                 send: str = input("Enter command or message: ")
                 if send:
+                    # CASE: user sends terminate message
                     if send == 'terminate':
                         s.sendall(b'TERM')
                         password: str = input("Enter input a password: ")
                         s.sendall(('PASS ' + password).encode('utf-8'))
-                        respone: str = s.recv(1024)
-                        if respone == b'PWOK':
+                        response: bytes = s.recv(1024)
+                        # CASE: Password correct
+                        if response == b'PWOK':
                             print("Password correct, terminating the server")
                             s.close()
-                            sys.close()
                             break
-                        elif respone == b'PWNO':
+                        # CASE: Password incorrect
+                        elif response == b'PWNO':
                             print("Invalid password, server continues to run")
-                        elif respone == b'PWIV':
+                        # CASE: Password format invalid
+                        elif response == b'PWIV':
                             print("Invalid password format, server continues to run")
+                        sys.exit()
+                    # CASE: user sends regular text message
                     else:
                         s.sendall(('MESG ' + send).encode('utf-8'))
 

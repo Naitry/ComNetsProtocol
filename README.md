@@ -1,5 +1,5 @@
 The project is a basic python implementation of a tcp socket
-It requires nothing other than python 3.x
+It requires nothing other than python 3.x to run the python version of the server
 
 ## Server
 The server can be ran from the command line with:
